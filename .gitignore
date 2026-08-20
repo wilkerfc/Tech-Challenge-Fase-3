@@ -1,0 +1,14 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+data/raw/*.parquet
+data/processed/*.parquet
+reports/*.json
+reports/*.csv
+images/*.png
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!reports/.gitkeep
+!images/.gitkeep
