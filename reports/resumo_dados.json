@@ -1,0 +1,17 @@
+{
+  "linhas_uf": 145,
+  "anos_uf": [
+    2023,
+    2024
+  ],
+  "ufs_pareadas_modelagem": 24,
+  "atingiram_meta_2024": 11,
+  "nao_atingiram_meta_2024": 13,
+  "ufs_maior_deficit_observado": [
+    "RS",
+    "AM",
+    "BA",
+    "PA",
+    "RN"
+  ]
+}

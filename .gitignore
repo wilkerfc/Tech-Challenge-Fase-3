@@ -5,9 +5,11 @@ __pycache__/
 *.py[cod]
 data/raw/*.parquet
 data/processed/*.parquet
-reports/*.json
-reports/*.csv
-images/*.png
+reports/modelo.joblib
+work/
+.venv/
+__pycache__/
+.pytest_cache/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !reports/.gitkeep

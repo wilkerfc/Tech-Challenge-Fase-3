@@ -1,84 +1,119 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 import json
+from pathlib import Path
+
 import joblib
+import numpy as np
 import pandas as pd
-from sklearn.compose import ColumnTransformer
+from sklearn.base import clone
+from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import average_precision_score, classification_report, roc_auc_score
-from sklearn.model_selection import GroupKFold, GroupShuffleSplit, GridSearchCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, average_precision_score, balanced_accuracy_score, confusion_matrix, f1_score, roc_auc_score
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import StandardScaler
 
-FEATURES = ["ano", "id_municipio", "id_escola", "serie", "rede", "presenca", "preenchimento_caderno"]
-NUMERIC = ["ano"]
-CATEGORICAL = [x for x in FEATURES if x not in NUMERIC]
+FEATURES = ["taxa_alfabetizacao_2023", "media_portugues_2023", "meta_alfabetizacao_2024"]
+TARGET = "atingiu_meta_2024"
 
 
 @dataclass
 class TrainResult:
-    pipeline: Pipeline
+    model: Pipeline
     metrics: dict
-    test: pd.DataFrame
+    predictions: pd.DataFrame
+    importance: pd.DataFrame
 
 
-def grouped_split(df: pd.DataFrame, random_state: int = 42):
-    """Separa por municipio: nenhuma localidade aparece simultaneamente em treino e teste."""
-    first = GroupShuffleSplit(n_splits=1, test_size=.20, random_state=random_state)
-    train_idx, test_idx = next(first.split(df, groups=df["id_municipio"]))
-    train = df.iloc[train_idx].copy()
-    test = df.iloc[test_idx].copy()
-    second = GroupShuffleSplit(n_splits=1, test_size=.20, random_state=random_state + 1)
-    tr_idx, val_idx = next(second.split(train, groups=train["id_municipio"]))
-    return train.iloc[tr_idx].copy(), train.iloc[val_idx].copy(), test
-
-
-def build_pipeline() -> Pipeline:
-    preprocessor = ColumnTransformer([
-        ("num", Pipeline([("imputer", SimpleImputer(strategy="median"))]), NUMERIC),
-        ("cat", Pipeline([
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("onehot", OneHotEncoder(handle_unknown="ignore", min_frequency=5)),
-        ]), CATEGORICAL),
+def _candidate_models(random_state: int):
+    logistic = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scale", StandardScaler()),
+        ("model", LogisticRegression(class_weight="balanced", random_state=random_state, max_iter=2000)),
     ])
-    return Pipeline([("preprocess", preprocessor), ("model", RandomForestClassifier(
-        class_weight="balanced", n_jobs=-1, random_state=42
-    ))])
-
-
-def train(df: pd.DataFrame, random_state: int = 42) -> TrainResult:
-    train_df, val_df, test_df = grouped_split(df, random_state)
-    pipe = build_pipeline()
-    # Busca restrita para manter reproducibilidade e custo controlado; CV tambem respeita municipios.
-    search = GridSearchCV(
-        pipe,
-        {"model__n_estimators": [200, 400], "model__max_depth": [None, 16], "model__min_samples_leaf": [1, 5]},
-        scoring="roc_auc",
-        cv=GroupKFold(n_splits=3),
-        n_jobs=-1,
-    )
-    search.fit(train_df[FEATURES], train_df["alfabetizado_binario"], groups=train_df["id_municipio"])
-    val_prob = search.predict_proba(val_df[FEATURES])[:, 1]
-    test_prob = search.predict_proba(test_df[FEATURES])[:, 1]
-    test_pred = (test_prob >= .5).astype(int)
-    metrics = {
-        "best_params": search.best_params_,
-        "validation_roc_auc": float(roc_auc_score(val_df["alfabetizado_binario"], val_prob)),
-        "test_roc_auc": float(roc_auc_score(test_df["alfabetizado_binario"], test_prob)),
-        "test_average_precision": float(average_precision_score(test_df["alfabetizado_binario"], test_prob)),
-        "test_classification_report": classification_report(test_df["alfabetizado_binario"], test_pred, output_dict=True),
-        "split": {"train": len(train_df), "validation": len(val_df), "test": len(test_df)},
+    forest = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("model", RandomForestClassifier(class_weight="balanced", random_state=random_state, n_jobs=1)),
+    ])
+    return {
+        "logistic_regression": (logistic, {"model__C": [0.1, 1.0, 10.0]}),
+        "random_forest": (forest, {"model__n_estimators": [200], "model__max_depth": [2, None], "model__min_samples_leaf": [2]}),
     }
-    test_df["probabilidade_alfabetizado"] = test_prob
-    test_df["predicao"] = test_pred
-    return TrainResult(search.best_estimator_, metrics, test_df)
 
 
-def save_result(result: TrainResult, model_path: str | Path, metrics_path: str | Path, predictions_path: str | Path):
-    Path(model_path).parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(result.pipeline, model_path)
-    Path(metrics_path).write_text(json.dumps(result.metrics, ensure_ascii=False, indent=2), encoding="utf-8")
-    result.test.to_csv(predictions_path, index=False)
+def _metrics(y: pd.Series, prob: np.ndarray) -> dict:
+    pred = (prob >= 0.5).astype(int)
+    return {
+        "roc_auc": float(roc_auc_score(y, prob)),
+        "average_precision": float(average_precision_score(y, prob)),
+        "accuracy": float(accuracy_score(y, pred)),
+        "balanced_accuracy": float(balanced_accuracy_score(y, pred)),
+        "f1": float(f1_score(y, pred)),
+        "confusion_matrix": confusion_matrix(y, pred).tolist(),
+    }
+
+
+def train_and_evaluate(frame: pd.DataFrame, random_state: int = 42) -> TrainResult:
+    """Validação cruzada aninhada; cada UF recebe previsão fora da amostra."""
+    x, y = frame[FEATURES], frame[TARGET]
+    if len(frame) < 20 or y.nunique() != 2:
+        raise ValueError("A amostra precisa de ao menos 20 UFs e das duas classes.")
+    outer = StratifiedKFold(n_splits=4, shuffle=True, random_state=random_state)
+    inner = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state + 1)
+    model_scores: dict[str, dict] = {}
+    model_probs: dict[str, np.ndarray] = {}
+    candidates = _candidate_models(random_state)
+    for name, (pipeline, grid) in candidates.items():
+        probs = np.zeros(len(frame), dtype=float)
+        chosen: list[dict] = []
+        for train_idx, test_idx in outer.split(x, y):
+            search = GridSearchCV(clone(pipeline), grid, scoring="roc_auc", cv=inner, n_jobs=1)
+            search.fit(x.iloc[train_idx], y.iloc[train_idx])
+            probs[test_idx] = search.best_estimator_.predict_proba(x.iloc[test_idx])[:, 1]
+            chosen.append(search.best_params_)
+        model_probs[name] = probs
+        model_scores[name] = {**_metrics(y, probs), "outer_folds": 4, "inner_folds": 3, "selected_params_by_fold": chosen}
+
+    dummy_probs = np.zeros(len(frame), dtype=float)
+    for train_idx, test_idx in outer.split(x, y):
+        dummy = DummyClassifier(strategy="prior").fit(x.iloc[train_idx], y.iloc[train_idx])
+        dummy_probs[test_idx] = dummy.predict_proba(x.iloc[test_idx])[:, 1]
+    model_scores["dummy_prior"] = _metrics(y, dummy_probs)
+
+    best_name = max(candidates, key=lambda name: model_scores[name]["roc_auc"])
+    best_pipeline, best_grid = candidates[best_name]
+    final_search = GridSearchCV(best_pipeline, best_grid, scoring="roc_auc", cv=inner, n_jobs=1)
+    final_search.fit(x, y)
+    model = final_search.best_estimator_
+    pred = frame[["sigla_uf", "taxa_alfabetizacao_2024", "meta_alfabetizacao_2024", TARGET]].copy()
+    pred["score_atingimento_oof_experimental"] = model_probs[best_name]
+    pred["score_nao_atingimento_experimental"] = 1 - pred["score_atingimento_oof_experimental"]
+    pred["predicao_oof"] = (pred["score_atingimento_oof_experimental"] >= 0.5).astype(int)
+    pred["gap_observado_2024"] = pred["taxa_alfabetizacao_2024"] - pred["meta_alfabetizacao_2024"]
+    pred = pred.sort_values("score_nao_atingimento_experimental", ascending=False).reset_index(drop=True)
+    values = (np.abs(model.named_steps["model"].coef_[0]) if best_name == "logistic_regression" else model.named_steps["model"].feature_importances_)
+    importance = pd.DataFrame({"variavel": FEATURES, "importancia_modelo": values}).sort_values("importancia_modelo", ascending=False)
+    metrics = {
+        "n_ufs": int(len(frame)),
+        "class_distribution": {str(k): int(v) for k, v in y.value_counts().sort_index().items()},
+        "validation": "nested_stratified_cross_validation",
+        "models": model_scores,
+        "selected_model": best_name,
+        "final_best_params": final_search.best_params_,
+        "beats_dummy_roc_auc": bool(model_scores[best_name]["roc_auc"] > model_scores["dummy_prior"]["roc_auc"]),
+        "deployment_recommendation": "DO_NOT_DEPLOY",
+        "caveat": "Amostra pequena (24 UFs pareadas); métricas têm alta incerteza e não validam uso operacional.",
+    }
+    return TrainResult(model, metrics, pred, importance)
+
+
+def save_result(result: TrainResult, reports_dir: str | Path) -> None:
+    out = Path(reports_dir); out.mkdir(parents=True, exist_ok=True)
+    joblib.dump(result.model, out / "modelo.joblib")
+    (out / "metricas.json").write_text(json.dumps(result.metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    result.predictions.to_csv(out / "predicoes_ufs.csv", index=False)
+    result.importance.to_csv(out / "importancia_variaveis.csv", index=False)

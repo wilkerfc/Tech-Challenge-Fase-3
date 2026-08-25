@@ -1,81 +1,78 @@
-# Tech Challenge - Fase 3 | Predição de Alfabetização
+# Tech Challenge — Fase 3 | Alfabetização por UF
 
-## Contexto e objetivo
+Solução reproduzível para analisar a alfabetização no 2º ano do Ensino Fundamental e testar, com dados anteriores, se é possível antecipar quais redes públicas estaduais alcançarão a meta oficial de 2024.
 
-Esta solução apoia decisões educacionais ao estimar a probabilidade de um aluno ser considerado alfabetizado. O problema é uma classificação supervisionada binária, com rótulo `alfabetizado` da tabela pública `basedosdados.br_inep_avaliacao_alfabetizacao.alunos`. O objetivo não é substituir a avaliação oficial: é gerar um sinal de risco para orientar investigação, alocação de apoio pedagógico e monitoramento de desigualdades.
+## Conclusão executiva
 
-## Dados e escopo
+O protótipo **não deve ser colocado em produção**. A regressão logística, melhor candidata avaliada, obteve ROC-AUC de **0,497** em validação cruzada aninhada — desempenho equivalente ao acaso. Esse resultado negativo é relevante: com apenas os agregados estaduais disponíveis nesta tabela, não há evidência de sinal preditivo suficiente para orientar decisões automatizadas.
 
-A extração usa o BigQuery informado no desafio e salva um snapshot local em `data/raw/alunos.parquet` (ignorado pelo Git). As variáveis candidatas são ano, município, escola, série, rede, presença e preenchimento do caderno. `proficiencia` foi deliberadamente excluída: ela é um resultado da mesma avaliação que compõe o rótulo e produziria **data leakage**. O mesmo vale para qualquer campo calculado após a prova.
+A entrega permanece útil como monitor descritivo, pipeline auditável e ponto de partida para uma versão futura com dados municipais, escolares e socioeconômicos.
 
-O repositório contém apenas código e artefatos vazios; dados de alunos não são versionados por privacidade, tamanho e reprodutibilidade. A conexão exige uma conta GCP autorizada a executar consultas no projeto de cobrança escolhido.
+## Escopo correto dos dados
 
-## Pipeline de modelagem
+A fonte indicada é `basedosdados.br_inep_avaliacao_alfabetizacao.uf`, uma tabela **agregada por UF, ano, série e rede**. Ela não contém registros de alunos. Por isso, este projeto não afirma prever alfabetização individual: o alvo experimental é `1` quando a taxa observada da rede pública em 2024 alcança a meta oficial da UF, e `0` caso contrário.
 
-1. Extração SQL parametrizada da tabela pública.
-2. Normalização explícita do rótulo para 0/1 e descarte de categorias ambíguas.
-3. Separação treino/validação/teste por **município**, impedindo que a mesma localidade apareça em treino e teste.
-4. Imputação dentro do `Pipeline` do scikit-learn, one-hot encoding com `handle_unknown="ignore"` e Random Forest com balanceamento de classe.
-5. Busca de hiperparâmetros somente no conjunto de treino, validação por ROC-AUC e avaliação final no teste separado.
-6. Exportação de métricas, predições, importância de variáveis e gráficos.
+Foram versionados os snapshots consultados no BigQuery:
 
-A transformação é treinada junto ao modelo. Portanto, ajustes de imputação e categorias são aprendidos apenas no treino. O split territorial reforça a generalização e reduz a chance de o modelo memorizar escolas ou municípios.
+- `data/raw/uf.csv`: 145 linhas de resultados de 2023 e 2024;
+- `data/raw/meta_alfabetizacao_uf.csv`: 81 metas oficiais de 2023 a 2025;
+- `data/raw/dicionario_uf.csv`: códigos usados no recorte (`rede=5`, pública estadual e municipal; `serie=2`, 2º ano).
 
-## Como executar
+A base de modelagem contém 24 UFs com observações públicas emparelhadas em 2023 e 2024. Não há imputação artificial de UFs ausentes.
 
-```bash
-python -m venv .venv
-.venv\\Scripts\\activate
-pip install -r requirements.txt
-copy .env.example .env
-# configure as credenciais padrão do Google e edite o projeto no ambiente
-set GCP_PROJECT_ID=seu-projeto-gcp
-python run_pipeline.py --extract --max-rows 500000
-pytest -q
-```
+## Metodologia
 
-Para executar sobre um snapshot já extraído:
+As variáveis de entrada são a taxa de alfabetização de 2023, a média de Língua Portuguesa de 2023 e a meta oficial de 2024. O resultado observado de 2024 é usado somente para construir o rótulo e avaliar o modelo; nunca entra como atributo preditor.
 
-```bash
-python run_pipeline.py --input data/raw/alunos.parquet
-```
+O pipeline aplica imputação e padronização dentro de cada dobra. A comparação usa validação cruzada estratificada aninhada (4 dobras externas e 3 internas), evitando selecionar hiperparâmetros nos próprios dados de avaliação. Foram comparados regressão logística, Random Forest e um classificador ingênuo pela prevalência.
 
-## Avaliação e interpretação
+| Modelo | ROC-AUC | Average Precision | Acurácia balanceada | F1 |
+| --- | ---: | ---: | ---: | ---: |
+| Regressão logística | 0,497 | 0,531 | 0,542 | 0,522 |
+| Random Forest | 0,388 | 0,451 | 0,458 | 0,435 |
+| Baseline ingênuo | 0,437 | 0,436 | 0,437 | 0,235 |
 
-As métricas geradas em `reports/metricas.json` incluem ROC-AUC, Average Precision e relatório de classificação do conjunto de teste. Os resultados numéricos não são preenchidos no repositório porque dependem do recorte e da data de extração. `reports/importancia_variaveis.csv` e `images/importancia_variaveis.png` permitem inspecionar a relevância preditiva; essa relevância descreve associação no modelo e não causalidade.
+As métricas são previsões fora da dobra agregadas. Com apenas 24 casos, têm alta incerteza e não sustentam uso operacional.
 
-## Perguntas estratégicas que a solução apoia
+## Achados descritivos
 
-- **Fatores associados:** importância de variáveis e análise por recortes de série, rede e presença.
-- **Risco educacional:** agregação da probabilidade média por município/escola após validação e revisão humana.
-- **Padrões regionais:** o arquivo de predições pode ser unido ao diretório de municípios da Gold da Fase 2 para UF/região.
-- **Metas futuras:** combinar as probabilidades com metas municipais/UF da Gold e observar a evolução temporal, sem usar informações futuras no treino.
-
-## Limitações e cuidados éticos
-
-- A base mede desempenho de uma avaliação, não todo o potencial da criança.
-- Predições individuais não devem ser usadas para punição, exclusão ou rotulação de alunos; decisões devem ter supervisão pedagógica e análise de viés.
-- Variáveis territoriais podem refletir desigualdades históricas. É obrigatório monitorar métricas por região, rede e outros grupos disponíveis antes de qualquer uso operacional.
-- O dataset pode ter cobertura temporal e representatividade limitadas; validação temporal é a evolução prioritária quando houver anos suficientes.
-
-## Aplicação em políticas públicas e próximos passos
-
-Gestores podem priorizar apoio técnico, formação e busca ativa em locais com maior concentração de risco, sempre combinando o sinal do modelo com evidências qualitativas. Evoluções recomendadas: integrar dados socioeconômicos e Censo Escolar na Gold, validação temporal, calibração de probabilidades, auditoria de equidade e explicabilidade local (SHAP) aprovada sob requisitos de privacidade.
+- Entre as 24 UFs emparelhadas, a média simples das taxas estaduais passou de 54,25% em 2023 para 56,83% em 2024. Não é uma taxa nacional ponderada.
+- Os maiores déficits observados em relação à meta de 2024 foram RS (-21,53 p.p.), AM (-7,63), BA (-7,44), PA (-5,40) e RN (-4,51).
+- Uma segmentação exploratória com taxa e média de Português de 2024 escolheu 3 grupos pelo silhouette (0,537). O Ceará formou um grupo isolado; isso descreve similaridade estatística, não causalidade ou recomendação de política.
+- Importâncias e correlações são associações exploratórias. A pequena amostra impede afirmar causas da alfabetização.
 
 ## Estrutura
 
 ```text
-data/                 # snapshots locais ignorados pelo Git
-scripts/              # SQL de extração
-src/preprocessing/    # extração, rótulo e limpeza
-src/modeling/         # split, pipeline e treino
-src/evaluation/       # explicabilidade
-src/visualization/    # gráficos
-reports/ e images/    # saídas reproduzíveis
-tests/                # testes unitários
-docs/                 # documentação e roteiro executivo
+data/raw/           snapshots e dicionário do BigQuery
+data/processed/     tabela analítica gerada
+src/preprocessing/  validação e junção temporal
+src/modeling/       classificação e clustering
+src/visualization/  gráficos reproduzíveis
+scripts/            SQL usado na extração
+reports/            métricas, predições e relatório
+images/             visualizações finais
+tests/              teste de integridade temporal
 ```
 
-## Versionamento
+## Reprodução
 
-Fluxo recomendado: branches `feature/*`, pull request para `develop` e merge revisado em `main`. Cada alteração de dados, hipótese, variável e métrica deve ser registrada no PR.
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python run_pipeline.py
+pytest -q
+```
+
+O SQL completo está em `scripts/extract_bigquery.sql`. Os CSVs já incluídos permitem executar o pipeline sem credenciais do Google Cloud. A semente aleatória é 42.
+
+## Limitações e uso responsável
+
+- Dois anos e 24 UFs são insuficientes para generalização robusta.
+- A tabela não permite responder quais alunos, escolas ou municípios estão em risco.
+- Não há atributos socioeconômicos, de infraestrutura, docentes ou investimento.
+- A meta oficial é conhecida previamente, mas é também relacionada ao contexto estadual; seu uso deve ser reavaliado em validações temporais futuras.
+- Os déficits observados servem para monitoramento e investigação humana, não para ranquear qualidade de gestores ou punir redes.
+
+Para avançar, recomenda-se ampliar a série histórica e usar dados no nível municipal/escolar, mantendo separação temporal e territorial, auditoria de viés e avaliação de calibração.

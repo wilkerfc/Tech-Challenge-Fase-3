@@ -1,25 +1,25 @@
-# Roteiro para vídeo executivo (até 5 minutos)
+# Roteiro do vídeo executivo — até 5 minutos
 
-## 0:00-0:35 - Problema
+## 0:00–0:40 — Objetivo e honestidade do escopo
 
-“A alfabetização no início da trajetória escolar condiciona o restante da aprendizagem. Hoje, gestores precisam identificar onde o apoio pode chegar antes que a defasagem se aprofunde.” Mostre o objetivo: estimar risco de não alfabetização para apoiar a priorização de políticas.
+Apresente o desafio e a fonte. Explique que a tabela indicada é agregada por UF, não contém alunos, e que o experimento prevê se a rede pública estadual alcança a meta oficial de 2024 usando resultados de 2023.
 
-## 0:35-1:20 - Dados e governança
+## 0:40–1:25 — Dados
 
-Apresente a tabela pública do INEP/Base dos Dados, a camada Gold da Fase 2 e as variáveis utilizadas. Explique que proficiência não foi usada porque vazaria a resposta da prova. Destaque que nenhum dado de aluno é armazenado no repositório.
+Mostre os três snapshots: resultados por UF, metas oficiais e dicionário. Destaque o recorte do 2º ano e rede pública. A base final tem 24 UFs emparelhadas, sendo 11 metas atingidas e 13 não atingidas.
 
-## 1:20-2:20 - Método confiável
+## 1:25–2:20 — Pipeline confiável
 
-Mostre o diagrama: BigQuery → preparação → split por município → pipeline scikit-learn → avaliação → relatório. Diga que imputação e encoding estão no pipeline, e que municípios de teste não aparecem no treino.
+Mostre o fluxo BigQuery → validação e junção temporal → pipeline → validação cruzada aninhada → relatórios. Explique que os resultados de 2024 constroem apenas o rótulo; as features vêm de 2023, além da meta conhecida para 2024. Imputação e escala são aprendidas somente no treino.
 
-## 2:20-3:20 - Resultado e leitura
+## 2:20–3:15 — Resultado do modelo
 
-Após a execução, apresente ROC-AUC, Average Precision e o gráfico de importância gerados na pasta `reports/` e `images/`. Não diga que importância é causalidade. Mostre um ranking agregado por município somente com validação e revisão humana.
+Apresente a ROC-AUC de 0,497 da regressão logística, contra 0,388 da Random Forest e 0,437 do baseline. Diga claramente: o desempenho é equivalente ao acaso e a recomendação é **não implantar**. Não transforme um resultado fraco em promessa de negócio.
 
-## 3:20-4:20 - Valor para políticas públicas
+## 3:15–4:15 — Leitura descritiva
 
-Explique que o sinal permite orientar apoio pedagógico, formação e acompanhamento territorial. A decisão continua sendo humana, combinada com contexto local e capacidade de atendimento.
+Mostre os gráficos. Nas 24 UFs emparelhadas, a média simples subiu de 54,25% para 56,83%. Os maiores déficits observados frente à meta de 2024 foram RS, AM, BA, PA e RN. Apresente os três clusters como semelhanças exploratórias, sem atribuir causas.
 
-## 4:20-5:00 - Limites e próximos passos
+## 4:15–5:00 — Valor, limites e próximos passos
 
-Fale sobre auditoria de viés, validação temporal, integração de Censo/IBGE na Gold e calibração. Feche: “A solução transforma dado público em um instrumento reproduzível e responsável para priorizar a alfabetização.”
+Conclua que o pipeline oferece monitoramento reproduzível e evita decisões sustentadas por um modelo sem evidência. Para evoluir: incorporar séries históricas maiores e dados municipais/escolares e socioeconômicos; validar no tempo e no território; medir calibração e viés. Feche reforçando que decisão educacional deve permanecer humana e contextualizada.

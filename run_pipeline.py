@@ -1,36 +1,40 @@
 from __future__ import annotations
 
 import argparse
-import os
+import json
 from pathlib import Path
-from src.preprocessing.extract import extract_alunos
-from src.preprocessing.data import load_parquet
-from src.modeling.train import train, save_result
-from src.evaluation.importance import feature_importance
+
+from src.modeling.clustering import cluster_ufs
+from src.modeling.train import save_result, train_and_evaluate
+from src.preprocessing.data import build_cluster_table, build_modeling_table, load_sources
 from src.visualization.charts import save_charts
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Pipeline reproduzivel de predicao de alfabetizacao")
-    parser.add_argument("--extract", action="store_true", help="Consulta a tabela publica no BigQuery")
-    parser.add_argument("--input", default="data/raw/alunos.parquet")
-    parser.add_argument("--max-rows", type=int, default=int(os.getenv("BQ_MAX_ROWS", "500000")))
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Análise reproduzível de risco de alfabetização por UF")
+    parser.add_argument("--uf", default="data/raw/uf.csv")
+    parser.add_argument("--meta", default="data/raw/meta_alfabetizacao_uf.csv")
+    parser.add_argument("--random-state", type=int, default=42)
     args = parser.parse_args()
-    raw_path = Path(args.input)
-    if args.extract:
-        project = os.environ.get("GCP_PROJECT_ID")
-        if not project:
-            raise SystemExit("Defina GCP_PROJECT_ID antes de usar --extract.")
-        extract_alunos(project, args.max_rows, raw_path)
-    if not raw_path.exists():
-        raise SystemExit("Dataset ausente. Execute com --extract ou informe --input.")
-    df = load_parquet(raw_path)
-    result = train(df, int(os.getenv("RANDOM_STATE", "42")))
-    save_result(result, "reports/model.joblib", "reports/metricas.json", "reports/predicoes_teste.csv")
-    importance = feature_importance(result.pipeline)
-    importance.to_csv("reports/importancia_variaveis.csv", index=False)
-    save_charts(df, importance, "images")
-    print("Concluido. Consulte reports/ e images/.")
+    uf, meta = load_sources(args.uf, args.meta)
+    modeling = build_modeling_table(uf, meta)
+    clusters, cluster_metrics = cluster_ufs(build_cluster_table(uf), args.random_state)
+    result = train_and_evaluate(modeling, args.random_state)
+    save_result(result, "reports")
+    Path("data/processed").mkdir(parents=True, exist_ok=True)
+    modeling.to_csv("data/processed/base_modelagem.csv", index=False)
+    clusters.to_csv("reports/clusters_ufs.csv", index=False)
+    Path("reports/clustering_metricas.json").write_text(json.dumps(cluster_metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    summary = {
+        "linhas_uf": int(len(uf)), "anos_uf": sorted(int(x) for x in uf["ano"].unique()),
+        "ufs_pareadas_modelagem": int(len(modeling)),
+        "atingiram_meta_2024": int(modeling["atingiu_meta_2024"].sum()),
+        "nao_atingiram_meta_2024": int((1 - modeling["atingiu_meta_2024"]).sum()),
+        "ufs_maior_deficit_observado": result.predictions.sort_values("gap_observado_2024").head(5)["sigla_uf"].tolist(),
+    }
+    Path("reports/resumo_dados.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    save_charts(modeling, result.predictions, result.importance, clusters, "images")
+    print(json.dumps(result.metrics, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

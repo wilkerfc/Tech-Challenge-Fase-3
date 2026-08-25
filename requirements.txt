@@ -1,6 +1,6 @@
 google-cloud-bigquery>=3.25,<4
-pyarrow>=17,<20
-pandas>=2.2,<3
+pyarrow>=17
+pandas>=2.2,<4
 scikit-learn>=1.5,<2
 matplotlib>=3.9,<4
 seaborn>=0.13,<1
