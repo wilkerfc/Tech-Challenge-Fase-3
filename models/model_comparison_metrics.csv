@@ -1,0 +1,4 @@
+Modelo,CV Bal Acc (Média ± DP),CV ROC-AUC,Teste Balanced Acc,Teste ROC-AUC,Teste Recall Risco (Classe 0),Teste Recall Sucesso (Classe 1),Teste Precision Risco,Teste F1 Macro,Teste Acurácia Global
+Regressão Logística (Baseline),0.9221 ± 0.0022,0.973,0.9451,0.9827,0.9521,0.9381,0.5113,0.8159,0.939
+Random Forest Classifier (Otimizado),0.9196 ± 0.0062,0.9711,0.9449,0.9809,0.9606,0.9292,0.4803,0.8012,0.9312
+HistGradientBoosting Classifier (Otimizado),0.9149 ± 0.0092,0.9717,0.9324,0.9811,0.9296,0.9352,0.494,0.8046,0.9348
