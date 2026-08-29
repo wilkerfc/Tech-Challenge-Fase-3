@@ -1,9 +1,0 @@
-id_tabela,nome_coluna,chave,cobertura_temporal,valor
-uf,rede,0,(1),"Total (Federal, Estadual, Municipal e Privada)"
-uf,rede,1,(1),Federal
-uf,rede,2,(1),Estadual
-uf,rede,3,(1),Municipal
-uf,rede,4,(1),Privada
-uf,rede,5,(1),Pública (Estadual e Municipal)
-uf,rede,6,(1),"Pública (Federal, Estadual e Municipal)"
-uf,serie,2,(1),2° ano do Ensino Fundamental
