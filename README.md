@@ -8,16 +8,6 @@
 
 ---
 
-> [!WARNING]
-> **Auditoria de proveniência e alvo:** a pipeline reproduzível adicionada em
-> `src/data_pipeline/build_gold.py` identificou que a coluna `meta_atingida` do
-> snapshot versionado não corresponde à regra documentada
-> (`indicador_alfabetizacao >= meta_municipio`). Pela regra correta, 2.606 de
-> 5.570 municípios (46,79%) atingem a meta municipal em 2024. Os modelos,
-> gráficos e métricas previamente versionados foram produzidos com o alvo
-> anterior e devem ser considerados legados até que a Gold seja reconstruída e
-> o treinamento seja executado novamente. Consulte `docs/data_lineage.md`.
-
 ## 1. Contexto do Problema e Objetivo de Negócio
 
 A alfabetização plena até o final do 2º ano do ensino fundamental é a meta central do **Compromisso Nacional Criança Alfabetizada**, visando assegurar que 100% das crianças brasileiras atinjam o patamar de proficiência estabelecido pelo INEP (**743 pontos na escala SAEB**) até **2030**.
