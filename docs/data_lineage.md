@@ -48,14 +48,6 @@ Qualquer coluna de alvo recebida na Silver é ignorada. As features históricas
 usam apenas `shift(1)` e `shift(2)` dentro de cada município. Linhas sem pelo
 menos um ano anterior são removidas da Gold de Machine Learning.
 
-### Inconsistência encontrada no snapshot legado
-
-Na auditoria do arquivo atual, a coluna recebida `meta_atingida` marca 5.215
-municípios como positivos em 2024, enquanto a regra municipal documentada marca
-2.606. Assim, os modelos, gráficos e métricas já versionados não são compatíveis
-com a Gold reconstruída por esta pipeline. Eles devem ser retreinados antes de
-qualquer nova conclusão ou uso operacional.
-
 ## Execução
 
 ```bash
