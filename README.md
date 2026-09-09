@@ -350,6 +350,4 @@ Cada execução cria `manifest.json` com SHA-256 e contagens de entrada/saída. 
 proveniência externa que acompanha o snapshot atual é limitada: os municípios
 estão anonimizados e a consulta original não foi versionada. Por isso, a
 documentação não caracteriza esse snapshot como extração oficial auditável.
-Consulte [`docs/data_lineage.md`](docs/data_lineage.md) para o contrato, a
-linhagem completa e as limitações.
 
